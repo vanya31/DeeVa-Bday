@@ -1,6 +1,6 @@
 const TARGET=new Date(2026,9,19,21,0,0);
 // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE (see setup steps). Leave empty for preview mode.
-const SCRIPT_URL="";
+const SCRIPT_URL="https://script.google.com/macros/s/AKfycbyi7SBUv2azu2bN-qDlPRyo8qomyvCrJcEZGMJHkKlxPiuhcLfIzNnz0As8GSSbpjZc/exec";
 const $=id=>document.getElementById(id);
 const calm=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const rnd=(a,b)=>a+Math.random()*(b-a);
