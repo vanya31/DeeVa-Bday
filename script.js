@@ -46,13 +46,21 @@ function render(list){
 /* storage: shared Google Sheet via Apps Script, or per-device preview mode */
 const LS='deepali_rsvps';
 let cur=[];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function localList(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return[]}}
-async function load(){
+async function load(strict){
  if(!SCRIPT_URL){cur=localList();render(cur);$('loc').textContent='Preview mode — names are only saved on this device. Add your Apps Script URL in script.js so everyone sees the same list.';$('loc').hidden=false;return}
  try{
-  const r=await fetch(SCRIPT_URL+'?t='+Date.now());
-  cur=(await r.json()).sort((a,b)=>(a.ts||0)-(b.ts||0));render(cur);$('loc').hidden=true;
- }catch(e){$('loc').textContent='Could not refresh the guest list just now. It will retry shortly.';$('loc').hidden=false}
+  const r=await fetch(SCRIPT_URL+(SCRIPT_URL.includes('?')?'&':'?')+'t='+Date.now());
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const d=await r.json();                       // throws if Google returned a login/error page instead of JSON
+  if(!Array.isArray(d))throw new Error('Unexpected response');
+  cur=d.sort((a,b)=>(a.ts||0)-(b.ts||0));render(cur);$('loc').hidden=true;
+ }catch(e){
+  console.error('RSVP list could not be loaded. Check the Apps Script deployment (access: Anyone) and the /exec URL in script.js.',e);
+  $('loc').textContent='Could not refresh the guest list just now. It will retry shortly.';$('loc').hidden=false;
+  if(strict)throw e;
+ }
 }
 load();setInterval(()=>{if(!document.hidden)load()},15000);
 
@@ -63,18 +71,24 @@ $('f').addEventListener('submit',async e=>{
  if(!name){msg.className='err';msg.textContent='Please tell us your name first ♥';return}
  if(!a){msg.className='err';msg.textContent='Will you be joining us? Pick one above ♥';return}
  $('go').disabled=true;
+ const has=()=>cur.some(r=>String(r.name).trim().toLowerCase()===name.toLowerCase());
  try{
   if(SCRIPT_URL){
-   try{await fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify({name,attending:a,ask})})}catch(x){}   // plain-text body avoids CORS preflight
+   // no-cors: the browser sends it without needing a readable response (avoids redirect/CORS failures)
+   await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',body:JSON.stringify({name,attending:a,ask})});
   }else{
    const l=localList().filter(r=>r.name.toLowerCase()!==name.toLowerCase());l.push({name,attending:a,ts:Date.now()});
-   try{localStorage.setItem(LS,JSON.stringify(l))}catch(x){}
+   localStorage.setItem(LS,JSON.stringify(l));
   }
-  await load();
-  if(!cur.some(r=>r.name.toLowerCase()===name.toLowerCase()))throw 0;
+  await load(true);
+  for(let i=0;i<3&&!has();i++){await sleep(1500);await load(true)}   // give the Sheet a moment
+  if(!has())throw new Error('Name not found in list after saving');
   msg.textContent=a==='yes'?'Wonderful, '+name+' — your name is on the list. See you on the 19th ♥':'Thank you for letting us know, '+name+'. You will be missed ♡';
   if(a==='yes'&&!calm){const b=$('go').getBoundingClientRect();burst(b.left+b.width/2,b.top+b.height/2,22)}
   $('f').reset();
- }catch(err){msg.className='err';msg.textContent='Your reply could not be saved. Please try once more.'}
+ }catch(err){
+  console.error('RSVP failed:',err);
+  msg.className='err';msg.textContent='Your reply could not be saved. Please try once more.';
+ }
  $('go').disabled=false;
 });
